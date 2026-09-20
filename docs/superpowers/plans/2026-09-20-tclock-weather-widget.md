@@ -947,7 +947,7 @@ assert_eq "$(wc -l <"$calls" | tr -d ' ')" '4' 'cache-secs 0 always hits network
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `bash clock-tui/tests/weather-widget.sh`
-Expected: FAIL — `first run makes geocode+forecast calls` gets `0` (no network in non-json path? no: render already fetches, so this should pass) — the failing assertion is `second run ... uses cache` because both runs hit the network (4 calls).
+Expected: FAIL at `second run within TTL uses cache` — without a cache both runs hit the network, so the call count is `4`, not `2`. The first assertion already passes because the render path fetches.
 
 - [ ] **Step 3: Implement the cache and wire `main`**
 
