@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# tclock-weather — Open-Meteo weather widget for tclock.
+#
+#   [[clock.widgets]]
+#   title = "Weather"
+#   command = ["tclock-weather", "--city", "Curitiba"]
+#   refresh_secs = 900
+#
+# Location: --city NAME (geocoded) or --lat/--lon. Units: --units metric|imperial.
+# Theme: --theme / TCLOCK_WIDGET_THEME (default|evangelion|nerv). Cache on by
+# default; disable with --no-cache or --cache-secs 0.
+set -euo pipefail
+
+GEOCODE_URL="https://geocoding-api.open-meteo.com/v1/search"
+FORECAST_URL="https://api.open-meteo.com/v1/forecast"
+DEFAULT_DAYS=3
+DEFAULT_UNITS=metric
+DEFAULT_TIMEOUT=10
+DEFAULT_CACHE_SECS=900
+DEFAULT_THEME=default
+MAX_DAYS=16
+
+CITY=""
+LAT=""
+LON=""
+DAYS=""
+UNITS=""
+THEME=""
+OUTPUT_JSON=0
+CACHE_SECS=""
+NO_CACHE=0
+TIMEOUT=""
+NO_COLOR_FLAG=0
+CURRENT_ONLY=0
+NORMALIZED=""
+FORECAST_JSON=""
+LOC_NAME=""
+LOC_LAT=""
+LOC_LON=""
+
+die() {
+  printf 'tclock-weather: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'USAGE'
+tclock-weather — Open-Meteo weather widget for tclock
+
+Usage:
+  tclock-weather --city NAME [--days N] [--units metric|imperial] [--current-only]
+  tclock-weather --lat F --lon F [options]
+
+Options:
+  --city NAME          City to geocode (or TCLOCK_WEATHER_CITY)
+  --lat F --lon F      Explicit coordinates (skips geocoding)
+  --days N             Forecast days, 1-16 (default 3)
+  --current-only       Print only current conditions
+  --units UNIT         metric (default) or imperial
+  --theme NAME         default|evangelion|nerv (or TCLOCK_WIDGET_THEME)
+  --json               Print normalized JSON instead of a text block
+  --cache-secs N       Cache TTL in seconds (default 900; 0 disables)
+  --no-cache           Ignore and do not write the cache
+  --no-color           Do not emit ANSI color (NO_COLOR is also honored)
+  --timeout N          Network timeout in seconds (default 10)
+  -h, --help           Show this help
+USAGE
+}
+
+urlencode() {
+  local s=$1 out='' c h i
+  for ((i = 0; i < ${#s}; i++)); do
+    c=${s:i:1}
+    case "$c" in
+      [a-zA-Z0-9.~_-]) out+=$c ;;
+      ' ') out+='+' ;;
+      *) printf -v h '%%%02X' "'$c"; out+=$h ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+wmo_label() {
+  case "$1" in
+    0) printf 'Clear' ;;
+    1) printf 'Mostly clear' ;;
+    2) printf 'Partly cloudy' ;;
+    3) printf 'Overcast' ;;
+    45 | 48) printf 'Fog' ;;
+    51 | 53 | 55) printf 'Drizzle' ;;
+    56 | 57) printf 'Freezing drizzle' ;;
+    61 | 63 | 65) printf 'Rain' ;;
+    66 | 67) printf 'Freezing rain' ;;
+    71 | 73 | 75) printf 'Snow' ;;
+    77) printf 'Snow grains' ;;
+    80 | 81 | 82) printf 'Rain showers' ;;
+    85 | 86) printf 'Snow showers' ;;
+    95) printf 'Thunderstorm' ;;
+    96 | 99) printf 'Thunderstorm with hail' ;;
+    *) printf 'Unknown' ;;
+  esac
+}
+
+wmo_glyph() {
+  case "$1" in
+    0) printf '☀' ;;
+    1) printf '🌤' ;;
+    2) printf '⛅' ;;
+    3) printf '☁' ;;
+    45 | 48) printf '🌫' ;;
+    51 | 53 | 55 | 56 | 57) printf '🌦' ;;
+    61 | 63 | 65 | 66 | 67 | 80 | 81 | 82) printf '🌧' ;;
+    71 | 73 | 75 | 77 | 85 | 86) printf '❄' ;;
+    95 | 96 | 99) printf '⛈' ;;
+    *) printf '·' ;;
+  esac
+}
+
+# Zeller's congruence; prints 0=Sat, 1=Sun, 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri.
+weekday_from_iso() {
+  local rest=${1%-*}
+  local y
+  y=$((10#${rest%-*}))
+  local m
+  m=$((10#${rest##*-}))
+  local d
+  d=$((10#${1##*-}))
+  case "$m" in
+    1 | 2)
+      m=$((m + 12))
+      y=$((y - 1))
+      ;;
+  esac
+  local k=$((y % 100)) j=$((y / 100))
+  printf '%s' "$(((d + (13 * (m + 1)) / 5 + k + k / 4 + j / 4 + 5 * j) % 7))"
+}
+
+weekday_name() {
+  case "$1" in
+    0) printf 'Sat' ;;
+    1) printf 'Sun' ;;
+    2) printf 'Mon' ;;
+    3) printf 'Tue' ;;
+    4) printf 'Wed' ;;
+    5) printf 'Thu' ;;
+    6) printf 'Fri' ;;
+  esac
+}
+
+# Locale-independent rounding of an API decimal string (drops the fraction).
+round_number() {
+  local v=$1 sign='' int='' frac='' d
+  if [ -z "$v" ]; then
+    printf '0'
+    return 0
+  fi
+  case "$v" in -*) sign='-' v=${v#-} ;; esac
+  int=${v%%.*}
+  case "$v" in
+    *.*) frac=${v#*.} ;;
+  esac
+  if [ -z "$int" ]; then int=0; fi
+  if [ -n "$frac" ]; then
+    d=${frac:0:1}
+    if [[ "$d" =~ [0-9] ]] && [ "$d" -ge 5 ]; then int=$((int + 1)); fi
+  fi
+  printf '%s%s' "$sign" "$int"
+}
+
+# read_lines NAME "$newline_separated" -> fills global array NAME (bash 3.2 safe)
+read_lines() {
+  local name=$1 line i=0
+  eval "$name=()"
+  while IFS= read -r line; do
+    eval "$name[$i]=\$line"
+    i=$((i + 1))
+  done <<<"$2"
+}
+
+main() {
+  :
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
