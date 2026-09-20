@@ -177,8 +177,115 @@ read_lines() {
   done <<<"$2"
 }
 
+parse_args() {
+  CITY="${TCLOCK_WEATHER_CITY:-}"
+  UNITS="${TCLOCK_WEATHER_UNITS:-$DEFAULT_UNITS}"
+  THEME="${TCLOCK_WIDGET_THEME:-$DEFAULT_THEME}"
+  DAYS=$DEFAULT_DAYS
+  TIMEOUT=$DEFAULT_TIMEOUT
+  CACHE_SECS=$DEFAULT_CACHE_SECS
+  if [ -n "${NO_COLOR:-}" ]; then NO_COLOR_FLAG=1; fi
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --city)
+        if [ $# -lt 2 ]; then die "--city requires a value"; fi
+        CITY=$2
+        shift 2
+        ;;
+      --lat)
+        if [ $# -lt 2 ]; then die "--lat requires a value"; fi
+        LAT=$2
+        shift 2
+        ;;
+      --lon)
+        if [ $# -lt 2 ]; then die "--lon requires a value"; fi
+        LON=$2
+        shift 2
+        ;;
+      --days)
+        if [ $# -lt 2 ]; then die "--days requires a value"; fi
+        DAYS=$2
+        shift 2
+        ;;
+      --units)
+        if [ $# -lt 2 ]; then die "--units requires a value"; fi
+        UNITS=$2
+        shift 2
+        ;;
+      --theme)
+        if [ $# -lt 2 ]; then die "--theme requires a value"; fi
+        THEME=$2
+        shift 2
+        ;;
+      --cache-secs)
+        if [ $# -lt 2 ]; then die "--cache-secs requires a value"; fi
+        CACHE_SECS=$2
+        shift 2
+        ;;
+      --timeout)
+        if [ $# -lt 2 ]; then die "--timeout requires a value"; fi
+        TIMEOUT=$2
+        shift 2
+        ;;
+      --current-only)
+        CURRENT_ONLY=1
+        shift
+        ;;
+      --json)
+        OUTPUT_JSON=1
+        shift
+        ;;
+      --no-cache)
+        NO_CACHE=1
+        shift
+        ;;
+      --no-color)
+        NO_COLOR_FLAG=1
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      -*)
+        die "unknown option '$1' (see --help)"
+        ;;
+      *)
+        if [ -n "$CITY" ]; then die "unexpected argument '$1'"; fi
+        CITY=$1
+        shift
+        ;;
+    esac
+  done
+  validate
+}
+
+validate() {
+  if ! [[ "$DAYS" =~ ^[0-9]+$ ]] || [ "$DAYS" -lt 1 ] || [ "$DAYS" -gt "$MAX_DAYS" ]; then
+    die "invalid --days '$DAYS': expected an integer from 1 to $MAX_DAYS"
+  fi
+  if ! [[ "$TIMEOUT" =~ ^[0-9]+$ ]] || [ "$TIMEOUT" -lt 1 ]; then
+    die "invalid --timeout '$TIMEOUT': expected a positive integer"
+  fi
+  if ! [[ "$CACHE_SECS" =~ ^[0-9]+$ ]]; then
+    die "invalid --cache-secs '$CACHE_SECS': expected a non-negative integer"
+  fi
+  case "$UNITS" in
+    metric | imperial) ;;
+    *) die "invalid --units '$UNITS': expected metric or imperial" ;;
+  esac
+  if [ -n "$LAT" ] || [ -n "$LON" ]; then
+    if [ -z "$LAT" ] || [ -z "$LON" ]; then die "both --lat and --lon are required"; fi
+    if ! [[ "$LAT" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then die "invalid --lat '$LAT': expected a number"; fi
+    if ! [[ "$LON" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then die "invalid --lon '$LON': expected a number"; fi
+  fi
+  if [ -z "$CITY" ] && { [ -z "$LAT" ] || [ -z "$LON" ]; }; then
+    die "no location: pass --city NAME or --lat/--lon"
+  fi
+}
+
 main() {
-  :
+  parse_args "$@"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
