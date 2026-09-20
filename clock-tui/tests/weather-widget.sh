@@ -131,7 +131,7 @@ if [[ "$bad" != *'unexpected response from Open-Meteo'* ]]; then fail "malformed
 
 metric=$(run_widget --city Curitiba | plain)
 [[ "$metric" == *'22°C'* ]] || fail "metric temp: $metric"
-[[ "$metric" == *'feels 23°C'* ]] || fail "metric feels: $metric"
+[[ "$metric" == *'feels 23°C · Partly cloudy'* ]] || fail "metric feels: $metric"
 [[ "$metric" == *'Partly cloudy'* ]] || fail "metric cond: $metric"
 [[ "$metric" == *'Humidity 70%'* ]] || fail "metric humidity: $metric"
 [[ "$metric" == *'Wind 12 km/h'* ]] || fail "metric wind: $metric"

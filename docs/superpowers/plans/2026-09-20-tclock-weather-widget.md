@@ -803,7 +803,7 @@ In `clock-tui/tests/weather-widget.sh`, insert this block right before the final
 ```bash
 metric=$(run_widget --city Curitiba | plain)
 [[ "$metric" == *'22°C'* ]] || fail "metric temp: $metric"
-[[ "$metric" == *'feels 23°C'* ]] || fail "metric feels: $metric"
+[[ "$metric" == *'feels 23°C · Partly cloudy'* ]] || fail "metric feels: $metric"
 [[ "$metric" == *'Partly cloudy'* ]] || fail "metric cond: $metric"
 [[ "$metric" == *'Humidity 70%'* ]] || fail "metric humidity: $metric"
 [[ "$metric" == *'Wind 12 km/h'* ]] || fail "metric wind: $metric"
@@ -878,7 +878,7 @@ render() {
   title=$(color_for "$THEME" title)
   accent=$(color_for "$THEME" accent)
   reset=$(color_for "$THEME" reset)
-  printf '%s%s%s  %s%s%s · feels %s%s · %s %s\n' \
+  printf '%s%s%s  %s%s%s · feels %s · %s %s\n' \
     "$title" "$name" "$reset" \
     "$accent" "$(round_number "$temp")$unit" "$reset" \
     "$(round_number "$app")$unit" "$cond" "$glyph"
