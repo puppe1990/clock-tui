@@ -516,11 +516,47 @@ render() {
   fi
 }
 
+file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+
+cache_file() {
+  local base
+  if [ -n "$LAT" ] && [ -n "$LON" ]; then base="${LAT}_${LON}"; else base="$CITY"; fi
+  base=$(printf '%s' "$base" | tr -c 'A-Za-z0-9._-' '_')
+  printf '%s/tclock-weather/%s_%s_%s_%s.json' "${XDG_CACHE_HOME:-$HOME/.cache}" "$base" "$DAYS" "$UNITS" "$CURRENT_ONLY"
+}
+
+cache_get() {
+  if [ "$NO_CACHE" -eq 1 ]; then return 1; fi
+  if [ "$CACHE_SECS" -le 0 ]; then return 1; fi
+  local file mtime now
+  file=$(cache_file)
+  if [ ! -f "$file" ]; then return 1; fi
+  mtime=$(file_mtime "$file")
+  now=$(date +%s)
+  if [ $((now - mtime)) -ge "$CACHE_SECS" ]; then return 1; fi
+  cat "$file"
+}
+
+cache_put() {
+  if [ "$NO_CACHE" -eq 1 ]; then return 0; fi
+  if [ "$CACHE_SECS" -le 0 ]; then return 0; fi
+  local file
+  file=$(cache_file)
+  mkdir -p "$(dirname "$file")" 2>/dev/null || return 0
+  printf '%s' "$1" >"$file" 2>/dev/null || true
+}
+
 main() {
   parse_args "$@"
-  resolve_location
-  fetch_forecast
-  NORMALIZED=$(build_normalized)
+  local cached
+  if cached=$(cache_get); then
+    NORMALIZED=$cached
+  else
+    resolve_location
+    fetch_forecast
+    NORMALIZED=$(build_normalized)
+    cache_put "$NORMALIZED"
+  fi
   if [ "$OUTPUT_JSON" -eq 1 ]; then
     printf '%s\n' "$NORMALIZED"
   else

@@ -562,13 +562,13 @@ calls="$test_tmp/lonely.log"
 WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --json --lat -25.42 --lon -49.27 >/dev/null
 assert_eq "$(wc -l <"$calls" | tr -d ' ')" '1' 'lat/lon skips geocoding'
 
-geocode_empty=$(WEATHER_GEOCODE=empty run_widget --json --city Nowhere 2>&1 || true)
+geocode_empty=$(WEATHER_GEOCODE=empty run_widget --no-cache --json --city Nowhere 2>&1 || true)
 if [[ "$geocode_empty" != *'not found'* ]]; then fail "geocode empty: $geocode_empty"; fi
 
-net_fail=$(WEATHER_FAIL_CURL=1 run_widget --json --city Curitiba 2>&1 || true)
+net_fail=$(WEATHER_FAIL_CURL=1 run_widget --no-cache --json --city Curitiba 2>&1 || true)
 if [[ "$net_fail" != *'could not reach Open-Meteo geocoding'* ]]; then fail "network: $net_fail"; fi
 
-bad=$(WEATHER_FORECAST=malformed run_widget --json --city Curitiba 2>&1 || true)
+bad=$(WEATHER_FORECAST=malformed run_widget --no-cache --json --city Curitiba 2>&1 || true)
 if [[ "$bad" != *'unexpected response from Open-Meteo'* ]]; then fail "malformed: $bad"; fi
 ```
 

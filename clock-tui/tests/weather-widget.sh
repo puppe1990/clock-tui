@@ -120,13 +120,13 @@ calls="$test_tmp/lonely.log"
 WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --json --lat -25.42 --lon -49.27 >/dev/null
 assert_eq "$(wc -l <"$calls" | tr -d ' ')" '1' 'lat/lon skips geocoding'
 
-geocode_empty=$(WEATHER_GEOCODE=empty run_widget --json --city Nowhere 2>&1 || true)
+geocode_empty=$(WEATHER_GEOCODE=empty run_widget --no-cache --json --city Nowhere 2>&1 || true)
 if [[ "$geocode_empty" != *'not found'* ]]; then fail "geocode empty: $geocode_empty"; fi
 
-net_fail=$(WEATHER_FAIL_CURL=1 run_widget --json --city Curitiba 2>&1 || true)
+net_fail=$(WEATHER_FAIL_CURL=1 run_widget --no-cache --json --city Curitiba 2>&1 || true)
 if [[ "$net_fail" != *'could not reach Open-Meteo geocoding'* ]]; then fail "network: $net_fail"; fi
 
-bad=$(WEATHER_FORECAST=malformed run_widget --json --city Curitiba 2>&1 || true)
+bad=$(WEATHER_FORECAST=malformed run_widget --no-cache --json --city Curitiba 2>&1 || true)
 if [[ "$bad" != *'unexpected response from Open-Meteo'* ]]; then fail "malformed: $bad"; fi
 
 metric=$(run_widget --city Curitiba | plain)
@@ -154,5 +154,25 @@ unknown_raw=$(TCLOCK_WIDGET_THEME=whatever run_widget --city Curitiba)
 [[ "$unknown_raw" == *$'\033[1;36m'* ]] || fail "unknown theme should fall back to default"
 no_color_raw=$(run_widget --city Curitiba --no-color)
 [[ "$no_color_raw" != *$'\033['* ]] || fail "no-color still emitted escapes"
+
+calls="$test_tmp/cache.log"
+rm -rf "$test_tmp/cache"
+: >"$calls"
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --city Curitiba >/dev/null
+assert_eq "$(wc -l <"$calls" | tr -d ' ')" '2' 'first run makes geocode+forecast calls'
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --city Curitiba >/dev/null
+assert_eq "$(wc -l <"$calls" | tr -d ' ')" '2' 'second run within TTL uses cache'
+
+rm -rf "$test_tmp/cache"
+: >"$calls"
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --no-cache --city Curitiba >/dev/null
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --no-cache --city Curitiba >/dev/null
+assert_eq "$(wc -l <"$calls" | tr -d ' ')" '4' 'no-cache always hits network'
+
+rm -rf "$test_tmp/cache"
+: >"$calls"
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --cache-secs 0 --city Curitiba >/dev/null
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --cache-secs 0 --city Curitiba >/dev/null
+assert_eq "$(wc -l <"$calls" | tr -d ' ')" '4' 'cache-secs 0 always hits network'
 
 printf 'weather widget scenarios passed\n'
