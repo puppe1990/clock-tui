@@ -8,8 +8,9 @@ pkgdesc="A terminal clock app with clock, timer, stopwatch, countdown, and clock
 arch=('x86_64' 'aarch64')
 url="https://github.com/akitaonrails/clock-tui"
 license=('MIT')
-depends=('gcc-libs' 'curl')
-optdepends=('jq: faster JSON parsing in the tclock-weather and tclock-system-health example widgets'
+depends=('gcc-libs')
+optdepends=('curl: fetch weather data for the tclock-weather example widget'
+            'jq: faster JSON parsing in the tclock-weather and tclock-system-health example widgets'
             'btrfs-progs: btrfs health row in the tclock-system-health example widget')
 provides=("$_pkgname=$pkgver")
 conflicts=("$_pkgname" "$_pkgname-debug")
