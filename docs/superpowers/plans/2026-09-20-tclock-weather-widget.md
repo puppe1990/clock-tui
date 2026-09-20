@@ -931,6 +931,11 @@ git commit -m "feat(weather): render current conditions, forecast and themes"
 In `clock-tui/tests/weather-widget.sh`, insert this block right before the final `printf 'weather widget scenarios passed\n'`:
 
 ```bash
+mtime_probe=$(mktemp)
+mtime_value=$(file_mtime "$mtime_probe")
+[[ "$mtime_value" =~ ^[0-9]+$ ]] || fail "file_mtime not numeric: [$mtime_value]"
+rm -f "$mtime_probe"
+
 calls="$test_tmp/cache.log"
 rm -rf "$test_tmp/cache"
 : >"$calls"
@@ -962,7 +967,12 @@ Expected: FAIL at `second run within TTL uses cache` — without a cache both ru
 In `examples/widgets/tclock-weather`, add before `main`:
 
 ```bash
-file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+file_mtime() {
+  local m
+  m=$(stat -c %Y "$1" 2>/dev/null) || m=$(stat -f %m "$1" 2>/dev/null) || m=0
+  case "$m" in '' | *[!0-9]*) m=0 ;; esac
+  printf '%s' "$m"
+}
 
 cache_file() {
   local base

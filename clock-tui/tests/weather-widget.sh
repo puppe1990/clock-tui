@@ -39,6 +39,11 @@ assert_eq "$(round_number '')" '0' 'round empty'
 assert_eq "$(urlencode 'Porto Alegre')" 'Porto+Alegre' 'urlencode space'
 assert_eq "$(urlencode 'Curitiba')" 'Curitiba' 'urlencode token'
 
+mtime_probe=$(mktemp)
+mtime_value=$(file_mtime "$mtime_probe")
+[[ "$mtime_value" =~ ^[0-9]+$ ]] || fail "file_mtime not numeric: [$mtime_value]"
+rm -f "$mtime_probe"
+
 run_script() { "$widget" "$@" 2>&1; }
 
 expect_fail() {

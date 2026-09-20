@@ -516,7 +516,12 @@ render() {
   fi
 }
 
-file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+file_mtime() {
+  local m
+  m=$(stat -c %Y "$1" 2>/dev/null) || m=$(stat -f %m "$1" 2>/dev/null) || m=0
+  case "$m" in '' | *[!0-9]*) m=0 ;; esac
+  printf '%s' "$m"
+}
 
 cache_file() {
   local base
