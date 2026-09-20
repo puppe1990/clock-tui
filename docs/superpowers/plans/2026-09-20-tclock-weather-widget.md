@@ -585,27 +585,35 @@ In `examples/widgets/tclock-weather`, add these functions before `main`:
 have_jq() { command -v jq >/dev/null 2>&1; }
 
 json_object() {
-  printf '%s' "$1" | tr -d '\n' |
+  local out
+  out=$(printf '%s' "$1" | tr -d '\n' |
     grep -oE "\"$2\"[[:space:]]*:[[:space:]]*\{[^}]*\}" | head -n1 |
-    sed -E 's/^[^{]*\{//; s/\}[^{}]*$//'
+    sed -E 's/^[^{]*\{//; s/\}[^{}]*$//') || true
+  printf '%s' "$out"
 }
 
 json_field_from() {
-  printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*[^,}]*" | head -n1 |
-    sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"[[:space:]]*$//; s/[[:space:]]*$//'
+  local out
+  out=$(printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*[^,}]*" | head -n1 |
+    sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"[[:space:]]*$//; s/[[:space:]]*$//') || true
+  printf '%s' "$out"
 }
 
 json_array_from() {
-  printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*\[[^]]*\]" | head -n1 |
+  local out
+  out=$(printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*\[[^]]*\]" | head -n1 |
     sed -E 's/^[^[]*\[//; s/\][^]]*$//' | tr ',' '\n' |
-    sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//'
+    sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//') || true
+  printf '%s' "$out"
 }
 
 json_first_result_field() {
-  printf '%s' "$1" | tr -d '\n' |
+  local out
+  out=$(printf '%s' "$1" | tr -d '\n' |
     sed -E 's/.*"results"[[:space:]]*:[[:space:]]*\[//' |
     grep -oE "\"$2\"[[:space:]]*:[[:space:]]*[^,}]*" | head -n1 |
-    sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"[[:space:]]*$//; s/[[:space:]]*$//'
+    sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"[[:space:]]*$//; s/[[:space:]]*$//') || true
+  printf '%s' "$out"
 }
 
 extract_geocode_field() {

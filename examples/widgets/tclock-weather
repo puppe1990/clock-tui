@@ -284,8 +284,183 @@ validate() {
   fi
 }
 
+have_jq() { command -v jq >/dev/null 2>&1; }
+
+json_object() {
+  local out
+  out=$(printf '%s' "$1" | tr -d '\n' |
+    grep -oE "\"$2\"[[:space:]]*:[[:space:]]*\{[^}]*\}" | head -n1 |
+    sed -E 's/^[^{]*\{//; s/\}[^{}]*$//') || true
+  printf '%s' "$out"
+}
+
+json_field_from() {
+  local out
+  out=$(printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*[^,}]*" | head -n1 |
+    sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"[[:space:]]*$//; s/[[:space:]]*$//') || true
+  printf '%s' "$out"
+}
+
+json_array_from() {
+  local out
+  out=$(printf '%s' "$1" | grep -oE "\"$2\"[[:space:]]*:[[:space:]]*\[[^]]*\]" | head -n1 |
+    sed -E 's/^[^[]*\[//; s/\][^]]*$//' | tr ',' '\n' |
+    sed -E 's/^[[:space:]]*"?//; s/"?[[:space:]]*$//') || true
+  printf '%s' "$out"
+}
+
+json_first_result_field() {
+  local out
+  out=$(printf '%s' "$1" | tr -d '\n' |
+    sed -E 's/.*"results"[[:space:]]*:[[:space:]]*\[//' |
+    grep -oE "\"$2\"[[:space:]]*:[[:space:]]*[^,}]*" | head -n1 |
+    sed -E 's/^[^:]*:[[:space:]]*//; s/^"//; s/"[[:space:]]*$//; s/[[:space:]]*$//') || true
+  printf '%s' "$out"
+}
+
+extract_geocode_field() {
+  if have_jq; then
+    printf '%s' "$1" | jq -r ".results[0].$2 // empty"
+  else
+    json_first_result_field "$1" "$2"
+  fi
+}
+
+get_current_field() {
+  if have_jq; then
+    printf '%s' "$1" | jq -r ".current.$2 // empty"
+  else
+    json_field_from "$(json_object "$1" current)" "$2"
+  fi
+}
+
+get_daily_array() {
+  if have_jq; then
+    printf '%s' "$1" | jq -r ".daily.$2[]? | tostring"
+  else
+    json_array_from "$(json_object "$1" daily)" "$2"
+  fi
+}
+
+get_location_field() {
+  if have_jq; then
+    printf '%s' "$1" | jq -r ".location.$2 // empty"
+  else
+    json_field_from "$(json_object "$1" location)" "$2"
+  fi
+}
+
+json_quote() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
+
+http_get() {
+  curl --fail --silent --show-error --max-time "$TIMEOUT" "$1"
+}
+
+resolve_location() {
+  if [ -n "$LAT" ] && [ -n "$LON" ]; then
+    LOC_LAT=$LAT
+    LOC_LON=$LON
+    if [ -n "$CITY" ]; then LOC_NAME=$CITY; else LOC_NAME="$LAT,$LON"; fi
+    return 0
+  fi
+  local url response name lat lon
+  url="$GEOCODE_URL?name=$(urlencode "$CITY")&count=1&language=en&format=json"
+  response=$(http_get "$url") || die "could not reach Open-Meteo geocoding (timeout ${TIMEOUT}s); check your network"
+  name=$(extract_geocode_field "$response" name)
+  lat=$(extract_geocode_field "$response" latitude)
+  lon=$(extract_geocode_field "$response" longitude)
+  if [ -z "$lat" ] || [ -z "$lon" ]; then
+    die "city '$CITY' not found; check the spelling or pass --lat/--lon"
+  fi
+  LOC_NAME=${name:-$CITY}
+  LOC_LAT=$lat
+  LOC_LON=$lon
+}
+
+fetch_forecast() {
+  local params
+  params="latitude=$LOC_LAT&longitude=$LOC_LON&timezone=auto"
+  params="$params&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"
+  if [ "$CURRENT_ONLY" -eq 0 ]; then
+    params="$params&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=$DAYS"
+  fi
+  if [ "$UNITS" = imperial ]; then
+    params="$params&temperature_unit=fahrenheit&wind_speed_unit=mph"
+  else
+    params="$params&temperature_unit=celsius&wind_speed_unit=kmh"
+  fi
+  FORECAST_JSON=$(http_get "$FORECAST_URL?$params") || die "could not reach Open-Meteo forecast (timeout ${TIMEOUT}s); check your network"
+}
+
+build_daily_json() {
+  local dates codes maxs mins
+  dates=$(get_daily_array "$FORECAST_JSON" time)
+  codes=$(get_daily_array "$FORECAST_JSON" weather_code)
+  maxs=$(get_daily_array "$FORECAST_JSON" temperature_2m_max)
+  mins=$(get_daily_array "$FORECAST_JSON" temperature_2m_min)
+  [ -n "$dates" ] || die "unexpected response from Open-Meteo (no daily forecast); check the service or retry"
+  local D C X N i n wd
+  read_lines D "$dates"
+  read_lines C "$codes"
+  read_lines X "$maxs"
+  read_lines N "$mins"
+  n=${#D[@]}
+  local out_t='' out_w='' out_c='' out_x='' out_n=''
+  for ((i = 0; i < n; i++)); do
+    if [ "$i" -eq 0 ]; then wd=Today; else wd=$(weekday_name "$(weekday_from_iso "${D[$i]}")"); fi
+    if [ "$i" -gt 0 ]; then
+      out_t+=', '; out_w+=', '; out_c+=', '; out_x+=', '; out_n+=', '
+    fi
+    out_t+="$(json_quote "${D[$i]}")"
+    out_w+="$(json_quote "$wd")"
+    out_c+="${C[$i]:-0}"
+    out_x+="${X[$i]:-0}"
+    out_n+="${N[$i]:-0}"
+  done
+  printf '{"time": [%s], "weekday": [%s], "weather_code": [%s], "temperature_2m_max": [%s], "temperature_2m_min": [%s]}' \
+    "$out_t" "$out_w" "$out_c" "$out_x" "$out_n"
+}
+
+build_normalized() {
+  local temp app hum code wind
+  temp=$(get_current_field "$FORECAST_JSON" temperature_2m)
+  app=$(get_current_field "$FORECAST_JSON" apparent_temperature)
+  hum=$(get_current_field "$FORECAST_JSON" relative_humidity_2m)
+  code=$(get_current_field "$FORECAST_JSON" weather_code)
+  wind=$(get_current_field "$FORECAST_JSON" wind_speed_10m)
+  if [ -z "$temp" ] || [ -z "$code" ]; then
+    die "unexpected response from Open-Meteo; check the service or retry"
+  fi
+  local daily='{"time": [], "weekday": [], "weather_code": [], "temperature_2m_max": [], "temperature_2m_min": []}'
+  if [ "$CURRENT_ONLY" -eq 0 ]; then
+    daily=$(build_daily_json)
+  fi
+  printf '{\n'
+  printf '  "location": {"name": %s, "latitude": %s, "longitude": %s},\n' \
+    "$(json_quote "$LOC_NAME")" "$LOC_LAT" "$LOC_LON"
+  printf '  "current": {"temperature_2m": %s, "apparent_temperature": %s, "relative_humidity_2m": %s, "weather_code": %s, "wind_speed_10m": %s},\n' \
+    "$temp" "$app" "$hum" "$code" "$wind"
+  printf '  "daily": %s\n' "$daily"
+  printf '}\n'
+}
+
+render() { printf '%s\n' "$NORMALIZED"; }
+
 main() {
   parse_args "$@"
+  resolve_location
+  fetch_forecast
+  NORMALIZED=$(build_normalized)
+  if [ "$OUTPUT_JSON" -eq 1 ]; then
+    printf '%s\n' "$NORMALIZED"
+  else
+    render
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

@@ -67,4 +67,66 @@ expect_fail 'bad units' "invalid --units 'kelvin'" --city Curitiba --units kelvi
 expect_fail 'bad lat' "invalid --lat 'x'" --lat x --lon 1
 expect_fail 'missing value' '--city requires a value' --city
 
+fixtures="$tests_dir/fixtures/weather"
+test_tmp=$(mktemp -d)
+trap 'rm -rf "$test_tmp"' EXIT
+mock_bin="$test_tmp/bin"
+mkdir -p "$mock_bin"
+
+cat >"$mock_bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+url=""
+for a in "$@"; do url=$a; done
+log=${WEATHER_CALL_LOG:?WEATHER_CALL_LOG not set}
+printf '%s\n' "$url" >>"$log"
+if [ "${WEATHER_FAIL_CURL:-0}" = 1 ]; then exit 7; fi
+case "$url" in
+  *geocoding-api.open-meteo.com*)
+    case "${WEATHER_GEOCODE:-ok}" in
+      empty) cat "$WEATHER_FIXTURES/geocode-empty.json" ;;
+      malformed) cat "$WEATHER_FIXTURES/malformed.json" ;;
+      *) cat "$WEATHER_FIXTURES/geocode-ok.json" ;;
+    esac
+    ;;
+  *api.open-meteo.com*)
+    case "${WEATHER_FORECAST:-ok}" in
+      malformed) cat "$WEATHER_FIXTURES/malformed.json" ;;
+      imperial) cat "$WEATHER_FIXTURES/forecast-imperial.json" ;;
+      *) cat "$WEATHER_FIXTURES/forecast-metric.json" ;;
+    esac
+    ;;
+  *) exit 22 ;;
+esac
+MOCK
+chmod +x "$mock_bin/curl"
+export WEATHER_FIXTURES="$fixtures"
+
+run_widget() {
+  WEATHER_CALL_LOG="${WEATHER_CALL_LOG_OVERRIDE:-$test_tmp/calls.log}" \
+    XDG_CACHE_HOME="$test_tmp/cache" \
+    PATH="$mock_bin:$PATH" \
+    "$widget" "$@"
+}
+
+plain() { sed -E $'s/\x1b\\[[0-9;]*m//g'; }
+
+json_out=$(run_widget --json --city Curitiba)
+if [[ "$json_out" != *'"name": "Curitiba"'* ]]; then fail "json city: $json_out"; fi
+if [[ "$json_out" != *'"temperature_2m": 22.4'* ]]; then fail "json temp: $json_out"; fi
+if [[ "$json_out" != *'"weekday": ["Today", "Mon", "Tue"]'* ]]; then fail "json weekday: $json_out"; fi
+
+calls="$test_tmp/lonely.log"
+: >"$calls"
+WEATHER_CALL_LOG_OVERRIDE="$calls" run_widget --json --lat -25.42 --lon -49.27 >/dev/null
+assert_eq "$(wc -l <"$calls" | tr -d ' ')" '1' 'lat/lon skips geocoding'
+
+geocode_empty=$(WEATHER_GEOCODE=empty run_widget --json --city Nowhere 2>&1 || true)
+if [[ "$geocode_empty" != *'not found'* ]]; then fail "geocode empty: $geocode_empty"; fi
+
+net_fail=$(WEATHER_FAIL_CURL=1 run_widget --json --city Curitiba 2>&1 || true)
+if [[ "$net_fail" != *'could not reach Open-Meteo geocoding'* ]]; then fail "network: $net_fail"; fi
+
+bad=$(WEATHER_FORECAST=malformed run_widget --json --city Curitiba 2>&1 || true)
+if [[ "$bad" != *'unexpected response from Open-Meteo'* ]]; then fail "malformed: $bad"; fi
+
 printf 'weather widget scenarios passed\n'
