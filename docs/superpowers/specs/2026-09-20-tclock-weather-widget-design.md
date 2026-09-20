@@ -135,8 +135,9 @@ Palettes `default`, `evangelion` (purple/lavender), `nerv` (red/amber/green),
 matching `tclock-system-health` conventions. The script reads
 `TCLOCK_WIDGET_THEME` (or `--theme`) and emits the palette's ANSI escapes.
 Unknown theme names fall back to `default`. Color is on by default so widgets
-match current behavior; `--no-color`, `NO_COLOR`, or a non-tty stdout disables
-ANSI escapes.
+match current behavior; `--no-color` or the `NO_COLOR` environment variable
+disables ANSI escapes. There is no tty auto-detection, which keeps color stable
+under pipes and tests.
 
 ## Error handling (actionable, shift-left)
 
