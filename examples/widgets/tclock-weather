@@ -449,7 +449,72 @@ build_normalized() {
   printf '}\n'
 }
 
-render() { printf '%s\n' "$NORMALIZED"; }
+theme_code() {
+  case "$1:$2" in
+    evangelion:title) printf '\033[1;35m' ;;
+    evangelion:accent) printf '\033[38;5;150m' ;;
+    nerv:title) printf '\033[1;31m' ;;
+    nerv:accent) printf '\033[32m' ;;
+    *:title) printf '\033[1;36m' ;;
+    *:accent) printf '\033[1;33m' ;;
+    *) printf '\033[0m' ;;
+  esac
+}
+
+color_for() {
+  if [ "$NO_COLOR_FLAG" -eq 1 ]; then
+    printf ''
+    return 0
+  fi
+  theme_code "$1" "$2"
+}
+
+render() {
+  local temp app hum code wind cond glyph name unit wunit
+  temp=$(get_current_field "$NORMALIZED" temperature_2m)
+  app=$(get_current_field "$NORMALIZED" apparent_temperature)
+  hum=$(get_current_field "$NORMALIZED" relative_humidity_2m)
+  code=$(get_current_field "$NORMALIZED" weather_code)
+  wind=$(get_current_field "$NORMALIZED" wind_speed_10m)
+  name=$(get_location_field "$NORMALIZED" name)
+  cond=$(wmo_label "$code")
+  glyph=$(wmo_glyph "$code")
+  unit='°C'
+  wunit='km/h'
+  if [ "$UNITS" = imperial ]; then
+    unit='°F'
+    wunit='mph'
+  fi
+  local title accent reset
+  title=$(color_for "$THEME" title)
+  accent=$(color_for "$THEME" accent)
+  reset=$(color_for "$THEME" reset)
+  printf '%s%s%s  %s%s%s · feels %s%s · %s %s\n' \
+    "$title" "$name" "$reset" \
+    "$accent" "$(round_number "$temp")$unit" "$reset" \
+    "$(round_number "$app")$unit" "$cond" "$glyph"
+  printf 'Humidity %s%% · Wind %s %s\n' "$(round_number "$hum")" "$(round_number "$wind")" "$wunit"
+  if [ "$CURRENT_ONLY" -eq 0 ]; then
+    local dates wds codes maxs mins D W C X N i n
+    dates=$(get_daily_array "$NORMALIZED" time)
+    wds=$(get_daily_array "$NORMALIZED" weekday)
+    codes=$(get_daily_array "$NORMALIZED" weather_code)
+    maxs=$(get_daily_array "$NORMALIZED" temperature_2m_max)
+    mins=$(get_daily_array "$NORMALIZED" temperature_2m_min)
+    read_lines D "$dates"
+    read_lines W "$wds"
+    read_lines C "$codes"
+    read_lines X "$maxs"
+    read_lines N "$mins"
+    n=${#D[@]}
+    for ((i = 0; i < n; i++)); do
+      printf '%s%-7s%s %s/%s  %s\n' \
+        "$accent" "${W[$i]}" "$reset" \
+        "$(round_number "${X[$i]}")°" "$(round_number "${N[$i]}")°" \
+        "$(wmo_label "${C[$i]}")"
+    done
+  fi
+}
 
 main() {
   parse_args "$@"

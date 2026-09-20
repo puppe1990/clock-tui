@@ -129,4 +129,30 @@ if [[ "$net_fail" != *'could not reach Open-Meteo geocoding'* ]]; then fail "net
 bad=$(WEATHER_FORECAST=malformed run_widget --json --city Curitiba 2>&1 || true)
 if [[ "$bad" != *'unexpected response from Open-Meteo'* ]]; then fail "malformed: $bad"; fi
 
+metric=$(run_widget --city Curitiba | plain)
+[[ "$metric" == *'22°C'* ]] || fail "metric temp: $metric"
+[[ "$metric" == *'feels 23°C'* ]] || fail "metric feels: $metric"
+[[ "$metric" == *'Partly cloudy'* ]] || fail "metric cond: $metric"
+[[ "$metric" == *'Humidity 70%'* ]] || fail "metric humidity: $metric"
+[[ "$metric" == *'Wind 12 km/h'* ]] || fail "metric wind: $metric"
+[[ "$metric" == *'Today'* ]] || fail "metric today: $metric"
+[[ "$metric" == *'24°/17°'* ]] || fail "metric daily: $metric"
+
+imperial=$(WEATHER_FORECAST=imperial run_widget --city Curitiba --units imperial | plain)
+[[ "$imperial" == *'72°F'* ]] || fail "imperial temp: $imperial"
+[[ "$imperial" == *'Wind 8 mph'* ]] || fail "imperial wind: $imperial"
+
+current_only=$(run_widget --city Curitiba --current-only | plain)
+[[ "$current_only" != *'Today'* ]] || fail "current-only leaked daily: $current_only"
+[[ "$current_only" == *'22°C'* ]] || fail "current-only temp: $current_only"
+
+default_raw=$(run_widget --city Curitiba)
+[[ "$default_raw" == *$'\033[1;36m'* ]] || fail "default theme title code missing"
+nerv_raw=$(TCLOCK_WIDGET_THEME=nerv run_widget --city Curitiba)
+[[ "$nerv_raw" == *$'\033[1;31m'* ]] || fail "nerv theme title code missing"
+unknown_raw=$(TCLOCK_WIDGET_THEME=whatever run_widget --city Curitiba)
+[[ "$unknown_raw" == *$'\033[1;36m'* ]] || fail "unknown theme should fall back to default"
+no_color_raw=$(run_widget --city Curitiba --no-color)
+[[ "$no_color_raw" != *$'\033['* ]] || fail "no-color still emitted escapes"
+
 printf 'weather widget scenarios passed\n'
