@@ -38,6 +38,8 @@ assert_eq "$(round_number '')" '0' 'round empty'
 
 assert_eq "$(urlencode 'Porto Alegre')" 'Porto+Alegre' 'urlencode space'
 assert_eq "$(urlencode 'Curitiba')" 'Curitiba' 'urlencode token'
+assert_eq "$(urlencode 'São Paulo')" 'S%C3%A3o+Paulo' 'urlencode utf8 two-byte'
+assert_eq "$(urlencode '東京')" '%E6%9D%B1%E4%BA%AC' 'urlencode utf8 three-byte'
 
 mtime_probe=$(mktemp)
 mtime_value=$(file_mtime "$mtime_probe")

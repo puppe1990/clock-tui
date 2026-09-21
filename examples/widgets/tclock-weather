@@ -68,6 +68,9 @@ USAGE
 }
 
 urlencode() {
+  # LC_ALL=C makes ${s:i:1} iterate bytes, not codepoints, so multibyte
+  # UTF-8 input percent-encodes correctly ("S%C3%A3o", never "S%E3o").
+  local LC_ALL=C
   local s=$1 out='' c h i
   for ((i = 0; i < ${#s}; i++)); do
     c=${s:i:1}
